@@ -19,7 +19,6 @@ async fn main() -> web3::Result {
 
     while let Some(pending_transaction_hash) = pending_transactions.try_next().await? {
         let pth = TransactionId::from(pending_transaction_hash);
-        println!("Pending transaction hash: {:?}", pth);
 
         let res = web3.eth().transaction(pth).await;
         // println!("Transaction retrieval result: {:?}", res);
@@ -32,9 +31,12 @@ async fn main() -> web3::Result {
                         // Log "to" and "value" fields of the transaction
                         if let Some(to) = txn.to {
                             if to == target_address{
+                                println!("======================================");
+                                println!("Pending transaction hash: {:?}", pth);
                                 println!("To: {:?}", to);
                                 println!("From: {:?}", txn.from);
                                 println!("value: {:?}", txn.value);
+                                println!("======================================");
                             }
                         } else {
                             warn!("Transaction does not have a 'to' address");
