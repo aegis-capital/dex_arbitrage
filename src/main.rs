@@ -34,6 +34,7 @@ async fn main() -> web3::Result {
                         } else {
                             warn!("Transaction does not have a 'to' address");
                         }
+                        println!("From: {:?}", txn.from );
                         println!("Value: {:?}", txn.value);
                     }
                 }
