@@ -36,12 +36,21 @@ async fn main() -> web3::Result {
                         }
                         info!("From: {:?}", txn.from );
                         info!("Value: {:?}", txn.value);
-                        if txn.to == "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"{
-                            println!("To: {:?}", txn.to);
-                            println!("From: {:?}", txn.from );
-                            println!("Value: {:?}", txn.value);
+                        if let Some(to) = txn.to {
+                            if to == "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D" {
+                                println!("To: {:?}", to);
+                                if let Some(from) = txn.from {
+                                    println!("From: {:?}", from);
+                                } else {
+                                    println!("From: None");
+                                }
+                                if let Some(value) = txn.value {
+                                    println!("Value: {:?}", value);
+                                } else {
+                                    println!("Value: None");
+                                }
+                            }
                         }
-                    }
                 }
             }
             Err(e) => error!("{:?}", e)
