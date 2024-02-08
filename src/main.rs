@@ -32,7 +32,7 @@ async fn main() -> web3::Result {
                         if let Some(to) = txn.to {
                             if to == target_address{
                                 println!("======================================");
-                                println!("Pending transaction hash: {:?}", pth);
+                                println!("Pending transaction hash: {:?}", txn.hash);
                                 println!("To: {:?}", to);
                                 println!("From: {:?}", txn.from);
                                 println!("value: {:?}", txn.value);
