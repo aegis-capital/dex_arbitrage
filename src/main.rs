@@ -18,10 +18,10 @@ async fn main() -> web3::Result {
 
     while let Some(pending_transaction_hash) = pending_transactions.try_next().await? {
         let pth = TransactionId::from(pending_transaction_hash);
-        info!("Pending transaction hash: {:?}", pth);
+        println!("Pending transaction hash: {:?}", pth);
 
         let res = web3.eth().transaction(pth).await;
-        info!("Transaction retrieval result: {:?}", res);
+        println!("Transaction retrieval result: {:?}", res);
 
         match res {
             Ok(opt_txn) => {
