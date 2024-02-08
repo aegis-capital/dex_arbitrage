@@ -10,7 +10,9 @@ use web3::types::H160;
 
 #[tokio::main]
 async fn main() -> web3::Result {
-    let target_address: H160 = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".parse().unwrap();
+    let target_address1: H160 = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".parse().unwrap();
+    let target_address2: H160 = "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD".parse().unwrap();
+
     env_logger::init();
     let sub_transport = WebSocket::new("ws://localhost:3334").await?;
     let web3 = web3::Web3::new(sub_transport);
@@ -30,7 +32,7 @@ async fn main() -> web3::Result {
                     Some(txn) => {
                         // Log "to" and "value" fields of the transaction
                         if let Some(to) = txn.to {
-                            if to == target_address{
+                            if to == target_address1 || to == target_address2 {
                                 println!("======================================");
                                 println!("Pending transaction hash: {:?}", txn.hash);
                                 println!("To: {:?}", to);
