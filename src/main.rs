@@ -20,6 +20,7 @@ async fn main() -> web3::Result {
         let pth = TransactionId::from(pending_transaction_hash);
         println!("Pending transaction hash: {:?}", pth); // Logging the pending transaction hash
         let res = web3.eth().transaction(pth).await;
+        println!("res: {:?}", res); // Logging the pending transaction hash
         match res {
             Ok(opt_txn) => {
                 match opt_txn {
