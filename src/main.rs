@@ -30,20 +30,12 @@ async fn main() -> web3::Result {
                     Some(txn) => {
                         // Log "to" and "value" fields of the transaction
                         if let Some(to) = txn.to {
-                            if to == "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D" {
-                                println!("To: {:?}", to);
-                                if let Some(from) = txn.from {
-                                    println!("From: {:?}", from);
-                                } else {
-                                    println!("From: None");
-                                }
-                                if let Some(value) = txn.value {
-                                    println!("Value: {:?}", value);
-                                } else {
-                                    println!("Value: None");
-                                }
-                            }
+                            println!("To: {:?}", to);
+                        } else {
+                            warn!("Transaction does not have a 'to' address");
                         }
+                        println!("From: {:?}", txn.from );
+                        println!("Value: {:?}", txn.value);
                     }
                 }
             }
