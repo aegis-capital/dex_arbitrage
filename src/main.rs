@@ -21,7 +21,7 @@ async fn main() -> web3::Result {
         println!("Pending transaction hash: {:?}", pth);
 
         let res = web3.eth().transaction(pth).await;
-        println!("Transaction retrieval result: {:?}", res);
+        // println!("Transaction retrieval result: {:?}", res);
 
         match res {
             Ok(opt_txn) => {
@@ -30,11 +30,11 @@ async fn main() -> web3::Result {
                     Some(txn) => {
                         // Log "to" and "value" fields of the transaction
                         if let Some(to) = txn.to {
-                            info!("To: {:?}", to);
+                            println!("To: {:?}", to);
                         } else {
                             warn!("Transaction does not have a 'to' address");
                         }
-                        info!("Value: {:?}", txn.value);
+                        println!("Value: {:?}", txn.value);
                     }
                 }
             }
