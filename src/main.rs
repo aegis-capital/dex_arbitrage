@@ -29,13 +29,6 @@ async fn main() -> web3::Result {
                     None => { warn!("could not find transaction for now") },
                     Some(txn) => {
                         // Log "to" and "value" fields of the transaction
-                        // if let Some(to) = txn.to {
-                        //     info!("To: {:?}", to);
-                        // } else {
-                        //     warn!("Transaction does not have a 'to' address");
-                        // }
-                        // info!("From: {:?}", txn.from );
-                        // info!("Value: {:?}", txn.value);
                         if let Some(to) = txn.to {
                             if to == "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D" {
                                 println!("To: {:?}", to);
@@ -51,6 +44,7 @@ async fn main() -> web3::Result {
                                 }
                             }
                         }
+                    }
                 }
             }
             Err(e) => error!("{:?}", e)
