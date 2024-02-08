@@ -11,7 +11,7 @@ use web3::types::{TransactionId};
 async fn main() -> web3::Result {
     print!("done");
     env_logger::init();
-    let sub_transport = WebSocket::new("wss://eth-mainnet.g.alchemy.com/v2/U7qmz5USjazOpq8YRDV9vmGtZwbVwLr2").await?;
+    let sub_transport = WebSocket::new("ws://localhost:3334").await?;
     let web3 = web3::Web3::new(sub_transport);
 
     let mut pending_transactions = web3.eth_subscribe().subscribe_new_pending_transactions().await?;
