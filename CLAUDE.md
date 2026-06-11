@@ -4,27 +4,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Despite the repository name (`dex_arbitrage`), the Cargo package is named `eth-mempool-listener-rs`. It is a single-binary Rust program (`src/main.rs`) that subscribes to pending Ethereum transactions and prints those addressed to two hardcoded DEX router contracts:
+A Rust DEX arbitrage bot (Cargo package `eth-mempool-listener-rs`) for Uniswap-V2-style pools. It monitors WETH pairs (USDC, DAI, USDT by default) on Uniswap V2 and SushiSwap, computes the profit-optimal trade size for two-pool arbitrage, and — when profit exceeds gas cost plus a configurable floor — executes the round trip atomically through a small on-chain executor contract.
 
-- `0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D` — Uniswap V2 Router 02
-- `0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD` — Uniswap Universal Router
+## Architecture
 
-The flow in `main.rs`: connect to an Ethereum node over WebSocket → `eth_subscribe` to new pending transaction hashes → fetch each full transaction via `eth().transaction()` → print hash/to/from/value when the `to` address matches a target. Matches go to stdout via `println!`; everything else (missing transactions, RPC errors) goes through the `log` crate (`warn!`/`error!`).
+The flow: `main.rs` resolves pair contracts from both factories at startup, then rescans reserves on every new block and whenever a pending transaction targeting a known DEX router appears in the mempool (debounced to one scan per 200ms). Each scan evaluates both directions (buy on Uniswap/sell on Sushi and vice versa) per market.
 
-## Runtime requirements
+- `src/arb.rs` — pure math, the core of the system. Closed-form optimal input for two constant-product pools with 0.3% fees: the optimum is located in f64, then the profit is **verified with exact integer math** before acting. All unit tests live here (plus one in `executor.rs`). Reserves are always oriented as `PoolReserves { base, quote }` where base is WETH.
+- `src/dex.rs` — minimal-ABI contract bindings: factory `getPair`, pair `getReserves`/`token0`, ERC20 `balanceOf`.
+- `src/executor.rs` — signs and submits `ArbExecutor.execute(...)` transactions (legacy gas-price txs via `web3.accounts().sign_transaction`).
+- `src/mempool.rs` — pending-transaction watcher; fires a rescan trigger via an mpsc channel when a transaction targets a router. Resubscribes itself on errors so the channel never closes.
+- `src/config.rs` — all configuration from env vars with mainnet defaults.
+- `contracts/ArbExecutor.sol` — owner-only contract holding WETH inventory; does both swap legs atomically and reverts unless profit ≥ `minProfit`, so stale opportunities cost only gas. Deployment instructions are in the file header. There is no Solidity build tooling in this repo; deploy with Foundry/Remix.
 
-- The program connects to a hardcoded WebSocket endpoint `ws://localhost:3334` (see `src/main.rs`). An Ethereum node (or a proxy/tunnel to one) must be listening there with pubsub support, or the program fails immediately on startup.
-- Logging uses `env_logger`, so set `RUST_LOG` to see `warn!`/`error!` output, e.g. `RUST_LOG=info cargo run`.
+Failure handling convention: `main()` wraps `run()` in an infinite reconnect loop; any subscription/transport error tears down and reconnects after 5s. Per-pair scan errors are logged and skipped, never fatal.
+
+## Configuration
+
+Everything is env-var driven (see `src/config.rs` for the full list and defaults):
+
+- `ETH_WS_URL` (default `ws://localhost:3334`) — needs an Ethereum node with pubsub; mempool triggers additionally need pending-transaction visibility.
+- `DRY_RUN` (default `true`) — opportunities are only logged. Setting `DRY_RUN=false` requires `PRIVATE_KEY` and `EXECUTOR_CONTRACT` (a deployed, WETH-funded `ArbExecutor` owned by that key).
+- `MAX_TRADE_WEI`, `MIN_PROFIT_WEI`, `GAS_LIMIT` — sizing and profitability thresholds. Profit must exceed `gas_price * GAS_LIMIT + MIN_PROFIT_WEI`.
+- `UNI_V2_FACTORY`, `SUSHI_FACTORY`, `WETH_ADDRESS` — mainnet defaults, overridable for forks/testnets.
 
 ## Commands
 
 - Build: `cargo build`
-- Run: `RUST_LOG=info cargo run`
+- Test: `cargo test` (pure-math tests; no node needed). Single test: `cargo test finds_near_optimal_input`
+- Run: `cargo run` (defaults to dry-run; logs at info level by default, `RUST_LOG=debug` for per-transaction mempool detail)
 - Lint: `cargo clippy`
 - Format: `cargo fmt`
 
-There are no tests and no CI configuration in this repository.
+There is no CI configuration in this repository.
 
-## Dependencies
+## Conventions
 
-Async runtime is `tokio` (full features); Ethereum access is the `web3` crate (0.17) with its `WebSocket` transport and `TryStreamExt` for consuming the subscription stream. Rust edition 2021.
+- Keep `optimal_arb`/`swap_out` pure and side-effect free — they are the only tested surface; anything touching the chain stays in `dex.rs`/`executor.rs`/`mempool.rs`.
+- Amounts are wei-denominated `U256` end to end; f64 is allowed only for locating the optimum and for log formatting, never for profit decisions.
+- On-chain addresses hardcoded as defaults must be verified against Etherscan before changing (the SushiSwap factory is `0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac`, easily confused with similar-looking addresses).
+- The Rust-side `EXECUTOR_ABI` in `executor.rs` must stay in sync with `contracts/ArbExecutor.sol`.
