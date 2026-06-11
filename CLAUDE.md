@@ -23,10 +23,12 @@ Failure handling convention: `main()` wraps `run()` in an infinite reconnect loo
 
 Everything is env-var driven (see `src/config.rs` for the full list and defaults):
 
-- `ETH_WS_URL` (default `ws://localhost:3334`) — needs an Ethereum node with pubsub; mempool triggers additionally need pending-transaction visibility.
+- `CHAIN` (default `mainnet`, also accepts `base`) — selects a per-chain preset (`ChainPreset` in `config.rs`) of factory/token/router addresses, expected chain id, and block time. The node's chain id is checked at startup and mismatches are warned. On Base there is no public mempool, so mempool triggers never fire; the 2s block cadence drives scanning instead, and the watcher backs off exponentially rather than spamming warnings.
+- `ETH_WS_URL` (default `ws://localhost:3334`) — needs a node (for the selected chain) with pubsub; mempool triggers additionally need pending-transaction visibility.
 - `DRY_RUN` (default `true`) — opportunities are only logged. Setting `DRY_RUN=false` requires `PRIVATE_KEY` and `EXECUTOR_CONTRACT` (a deployed, WETH-funded `ArbExecutor` owned by that key).
 - `MAX_TRADE_WEI`, `MIN_PROFIT_WEI`, `GAS_LIMIT` — sizing and profitability thresholds. Profit must exceed `gas_price * GAS_LIMIT + MIN_PROFIT_WEI`.
-- `UNI_V2_FACTORY`, `SUSHI_FACTORY`, `WETH_ADDRESS` — mainnet defaults, overridable for forks/testnets.
+- `UNI_V2_FACTORY`, `SUSHI_FACTORY`, `WETH_ADDRESS` — preset defaults per chain, overridable for forks/testnets.
+- On OP-stack chains (Base) the gas threshold `gas_price * GAS_LIMIT` excludes the L1 data fee; it is currently small enough to be absorbed by `MIN_PROFIT_WEI`, but keep that in mind before lowering the floor.
 
 ## Commands
 

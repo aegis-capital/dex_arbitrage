@@ -9,12 +9,21 @@ use web3::Web3;
 /// known DEX router, so the main loop can rescan reserves ahead of the next
 /// block. Loops forever, resubscribing on errors, so the trigger channel
 /// stays open for the lifetime of the connection.
+///
+/// Retries back off exponentially (5s..80s) so that chains without a public
+/// mempool (e.g. Base, where transactions go straight to the sequencer) don't
+/// fill the log; block-driven scanning carries the bot there.
 pub async fn watch(web3: Web3<WebSocket>, routers: Vec<H160>, trigger: mpsc::Sender<&'static str>) {
+    let mut backoff = std::time::Duration::from_secs(5);
     loop {
-        if let Err(e) = watch_once(&web3, &routers, &trigger).await {
-            warn!("mempool subscription error: {:?}; resubscribing in 5s", e);
+        match watch_once(&web3, &routers, &trigger).await {
+            Ok(()) => backoff = std::time::Duration::from_secs(5),
+            Err(e) => {
+                warn!("mempool subscription error: {:?}; resubscribing in {:?}", e, backoff);
+            }
         }
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(std::time::Duration::from_secs(80));
     }
 }
 

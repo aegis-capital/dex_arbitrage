@@ -29,7 +29,8 @@ async fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let cfg = Config::from_env();
     info!(
-        "starting arbitrage bot: node={} dry_run={} max_trade={} ETH min_profit={} ETH",
+        "starting arbitrage bot: chain={} node={} dry_run={} max_trade={} ETH min_profit={} ETH",
+        cfg.chain,
         cfg.ws_url,
         cfg.dry_run,
         format_eth(cfg.max_trade_wei),
@@ -49,6 +50,13 @@ async fn run(cfg: &Config) -> Result<(), BoxError> {
     let web3 = Web3::new(transport);
     let chain_id = web3.eth().chain_id().await?.as_u64();
     info!("connected to chain id {}", chain_id);
+    if chain_id != cfg.expected_chain_id {
+        warn!(
+            "node reports chain id {} but CHAIN={} expects {}; \
+             the default contract addresses are wrong unless overridden via env",
+            chain_id, cfg.chain, cfg.expected_chain_id
+        );
+    }
 
     let markets = resolve_markets(&web3, cfg).await?;
     if markets.is_empty() {
@@ -178,7 +186,7 @@ async fn scan(
                 match exec.send(pool_buy.address, pool_sell.address, opp.amount_in, gas_cost, gas_price).await {
                     Ok(hash) => {
                         info!("submitted arbitrage txn {:?}; pausing one block for nonce settlement", hash);
-                        tokio::time::sleep(Duration::from_secs(13)).await;
+                        tokio::time::sleep(Duration::from_secs(cfg.block_time_secs + 1)).await;
                     }
                     Err(e) => error!("failed to submit arbitrage txn: {}", e),
                 }
