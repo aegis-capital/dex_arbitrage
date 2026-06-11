@@ -2,6 +2,8 @@ use std::env;
 
 use web3::types::{H160, U256};
 
+use crate::dex::{FactoryKind, FactorySpec};
+
 pub struct Config {
     pub chain: String,
     /// Chain id the configured addresses belong to; mismatches are warned at startup.
@@ -17,22 +19,27 @@ pub struct Config {
     pub max_trade_wei: U256,
     /// Required profit on top of the estimated gas cost, in wei.
     pub min_profit_wei: U256,
-    pub gas_limit: u64,
-    pub uni_factory: H160,
-    pub sushi_factory: H160,
+    /// Gas estimate model: base + per_leg * number_of_swaps.
+    pub gas_base_units: u64,
+    pub gas_per_leg_units: u64,
+    /// Maximum swaps per arbitrage cycle (2 = direct cross-DEX, 3 = triangular, ...).
+    pub max_legs: usize,
+    pub factories: Vec<FactorySpec>,
     pub weth: H160,
     /// (symbol, address) of quote tokens traded against WETH.
     pub quote_tokens: Vec<(&'static str, H160)>,
+    /// Additional tokens (e.g. from TOKENS env) whose pools are discovered and
+    /// included in cycle search; symbols are resolved on-chain at startup.
+    pub extra_tokens: Vec<H160>,
     /// Router addresses whose pending transactions trigger an immediate rescan.
     pub routers: Vec<H160>,
 }
 
-/// Per-chain defaults; every address is still individually overridable via env.
+/// Per-chain defaults; addresses are individually overridable via env.
 struct ChainPreset {
     chain_id: u64,
     block_time_secs: u64,
-    uni_factory: &'static str,
-    sushi_factory: &'static str,
+    factories: &'static [(FactoryKind, &'static str, &'static str, Option<&'static str>)],
     weth: &'static str,
     quote_tokens: &'static [(&'static str, &'static str)],
     routers: &'static [&'static str],
@@ -41,8 +48,10 @@ struct ChainPreset {
 const MAINNET: ChainPreset = ChainPreset {
     chain_id: 1,
     block_time_secs: 12,
-    uni_factory: "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
-    sushi_factory: "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac",
+    factories: &[
+        (FactoryKind::UniV2, "uniswap", "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f", Some("UNI_V2_FACTORY")),
+        (FactoryKind::UniV2, "sushiswap", "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac", Some("SUSHI_FACTORY")),
+    ],
     weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
     quote_tokens: &[
         ("USDC", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
@@ -64,8 +73,12 @@ const MAINNET: ChainPreset = ChainPreset {
 const BASE: ChainPreset = ChainPreset {
     chain_id: 8453,
     block_time_secs: 2,
-    uni_factory: "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
-    sushi_factory: "0x71524B4f93c58fcbF659783284E38825f0622859",
+    factories: &[
+        (FactoryKind::UniV2, "uniswap", "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6", Some("UNI_V2_FACTORY")),
+        (FactoryKind::UniV2, "sushiswap", "0x71524B4f93c58fcbF659783284E38825f0622859", Some("SUSHI_FACTORY")),
+        // Volatile (x*y=k) pools only; per-pool fee read from the factory.
+        (FactoryKind::Solidly, "aerodrome", "0x420DD381b31aEf6683db6B902084cB0FFECe40Da", Some("AERODROME_FACTORY")),
+    ],
     weth: "0x4200000000000000000000000000000000000006",
     quote_tokens: &[
         // Native (Circle) USDC, not bridged USDbC.
@@ -100,6 +113,10 @@ fn env_u256(key: &str, default: &str) -> U256 {
     }
 }
 
+fn env_u64(key: &str, default: u64) -> u64 {
+    env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
 impl Config {
     pub fn from_env() -> Config {
         let chain = env::var("CHAIN").unwrap_or_else(|_| "mainnet".to_string()).to_lowercase();
@@ -122,6 +139,30 @@ impl Config {
             );
         }
 
+        let extra_tokens = env::var("TOKENS")
+            .or_else(|_| env::var("TOKEN_ADDRESS"))
+            .map(|csv| {
+                csv.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.parse().unwrap_or_else(|_| panic!("TOKENS contains invalid address: {}", s)))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let factories = preset
+            .factories
+            .iter()
+            .map(|(kind, name, default, env_key)| FactorySpec {
+                kind: *kind,
+                name,
+                address: match env_key {
+                    Some(key) => env_addr(key, default),
+                    None => addr(default),
+                },
+            })
+            .collect();
+
         Config {
             expected_chain_id: preset.chain_id,
             block_time_secs: preset.block_time_secs,
@@ -134,11 +175,13 @@ impl Config {
             max_trade_wei: env_u256("MAX_TRADE_WEI", "500000000000000000"),
             // 0.001 ETH
             min_profit_wei: env_u256("MIN_PROFIT_WEI", "1000000000000000"),
-            gas_limit: env::var("GAS_LIMIT").ok().and_then(|v| v.parse().ok()).unwrap_or(300_000),
-            uni_factory: env_addr("UNI_V2_FACTORY", preset.uni_factory),
-            sushi_factory: env_addr("SUSHI_FACTORY", preset.sushi_factory),
+            gas_base_units: env_u64("GAS_BASE_UNITS", 120_000),
+            gas_per_leg_units: env_u64("GAS_PER_LEG_UNITS", 120_000),
+            max_legs: env_u64("MAX_LEGS", 3).clamp(2, 4) as usize,
+            factories,
             weth: env_addr("WETH_ADDRESS", preset.weth),
             quote_tokens: preset.quote_tokens.iter().map(|(sym, a)| (*sym, addr(a))).collect(),
+            extra_tokens,
             routers: preset.routers.iter().map(|a| addr(a)).collect(),
         }
     }
