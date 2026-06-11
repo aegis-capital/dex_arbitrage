@@ -12,7 +12,7 @@ use web3::Web3;
 const EXECUTOR_ABI: &str = r#"[
   {"name":"execute","type":"function","stateMutability":"nonpayable",
    "inputs":[{"name":"pairs","type":"address[]"},{"name":"path","type":"address[]"},
-             {"name":"feesBps","type":"uint256[]"},
+             {"name":"feesBps","type":"uint256[]"},{"name":"poolKinds","type":"uint8[]"},
              {"name":"amountIn","type":"uint256"},{"name":"minProfit","type":"uint256"}],
    "outputs":[]}
 ]"#;
@@ -57,6 +57,7 @@ impl Executor {
         pairs: &[H160],
         path: &[H160],
         fees_bps: &[u32],
+        pool_kinds: &[u8],
         amount_in: U256,
         min_profit: U256,
         gas_price: U256,
@@ -66,6 +67,7 @@ impl Executor {
             Token::Array(pairs.iter().map(|p| Token::Address(*p)).collect()),
             Token::Array(path.iter().map(|t| Token::Address(*t)).collect()),
             Token::Array(fees_bps.iter().map(|f| Token::Uint((*f).into())).collect()),
+            Token::Array(pool_kinds.iter().map(|k| Token::Uint((*k).into())).collect()),
             Token::Uint(amount_in),
             Token::Uint(min_profit),
         ])?;
@@ -101,11 +103,12 @@ mod tests {
                     Token::Address(H160::repeat_byte(3)),
                 ]),
                 Token::Array(vec![Token::Uint(30u32.into()), Token::Uint(25u32.into())]),
+                Token::Array(vec![Token::Uint(0u8.into()), Token::Uint(1u8.into())]),
                 Token::Uint(U256::from(3u64)),
                 Token::Uint(U256::from(4u64)),
             ])
             .unwrap();
-        // selector + 5 head words + 3 dynamic arrays (len + elements).
-        assert_eq!(data.len(), 4 + 5 * 32 + (1 + 2) * 32 + (1 + 3) * 32 + (1 + 2) * 32);
+        // selector + 6 head words + 4 dynamic arrays (len + elements).
+        assert_eq!(data.len(), 4 + 6 * 32 + (1 + 2) * 32 + (1 + 3) * 32 + (1 + 2) * 32 + (1 + 2) * 32);
     }
 }

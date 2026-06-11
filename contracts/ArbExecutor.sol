@@ -25,13 +25,32 @@ interface IUniswapV2Pair {
     function swap(uint256 amount0Out, uint256 amount1Out, address to, bytes calldata data) external;
 }
 
+interface IUniswapV3Pool {
+    function token0() external view returns (address);
+    function swap(
+        address recipient,
+        bool zeroForOne,
+        int256 amountSpecified,
+        uint160 sqrtPriceLimitX96,
+        bytes calldata data
+    ) external returns (int256 amount0, int256 amount1);
+}
+
 interface IERC20 {
     function balanceOf(address owner) external view returns (uint256);
 }
 
 contract ArbExecutor {
+    // TickMath bounds; passing limit±1 means "no price limit" for exact-input swaps.
+    uint160 private constant MIN_SQRT_RATIO = 4295128739;
+    uint160 private constant MAX_SQRT_RATIO = 1461446703485210103287273052203988822378723970342;
+
     address public immutable owner;
     address public immutable baseToken;
+
+    /// Pool allowed to invoke uniswapV3SwapCallback, set only for the
+    /// duration of a V3 swap.
+    address private expectedV3Pool;
 
     constructor(address _baseToken) {
         owner = msg.sender;
@@ -45,16 +64,21 @@ contract ArbExecutor {
 
     /// path[i] is the input token of pairs[i]; path has one more entry than
     /// pairs and must begin and end with baseToken. feesBps[i] is the pool's
-    /// fee in 1/10000 units (30 = 0.3%).
+    /// fee in 1/10000 units (30 = 0.3%), used only for V2-style legs.
+    /// poolKinds[i]: 0 = V2-style pair, 1 = Uniswap V3 pool.
     function execute(
         address[] calldata pairs,
         address[] calldata path,
         uint256[] calldata feesBps,
+        uint8[] calldata poolKinds,
         uint256 amountIn,
         uint256 minProfit
     ) external onlyOwner {
         uint256 n = pairs.length;
-        require(n >= 2 && path.length == n + 1 && feesBps.length == n, "bad path shape");
+        require(
+            n >= 2 && path.length == n + 1 && feesBps.length == n && poolKinds.length == n,
+            "bad path shape"
+        );
         require(path[0] == baseToken && path[n] == baseToken, "path must cycle baseToken");
 
         uint256 balanceBefore = IERC20(baseToken).balanceOf(address(this));
@@ -62,11 +86,39 @@ contract ArbExecutor {
 
         uint256 amount = amountIn;
         for (uint256 i = 0; i < n; i++) {
-            amount = _swap(pairs[i], path[i], amount, feesBps[i]);
+            amount = poolKinds[i] == 0
+                ? _swap(pairs[i], path[i], amount, feesBps[i])
+                : _swapV3(pairs[i], path[i], amount);
         }
 
         uint256 balanceAfter = IERC20(baseToken).balanceOf(address(this));
         require(balanceAfter >= balanceBefore + minProfit, "unprofitable");
+    }
+
+    /// Exact-input V3 swap; the pool collects payment via the callback below.
+    function _swapV3(address pool, address tokenIn, uint256 amountIn)
+        internal
+        returns (uint256 amountOut)
+    {
+        require(amountIn <= uint256(type(int256).max), "amount too large");
+        bool zeroForOne = tokenIn == IUniswapV3Pool(pool).token0();
+        expectedV3Pool = pool;
+        (int256 amount0, int256 amount1) = IUniswapV3Pool(pool).swap(
+            address(this),
+            zeroForOne,
+            int256(amountIn),
+            zeroForOne ? MIN_SQRT_RATIO + 1 : MAX_SQRT_RATIO - 1,
+            abi.encode(tokenIn)
+        );
+        expectedV3Pool = address(0);
+        amountOut = uint256(-(zeroForOne ? amount1 : amount0));
+    }
+
+    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
+        require(msg.sender == expectedV3Pool, "unexpected callback");
+        address tokenIn = abi.decode(data, (address));
+        uint256 owed = uint256(amount0Delta > 0 ? amount0Delta : amount1Delta);
+        _safeTransfer(tokenIn, msg.sender, owed);
     }
 
     function withdraw(address token, uint256 amount) external onlyOwner {

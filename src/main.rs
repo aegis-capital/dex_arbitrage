@@ -161,15 +161,16 @@ async fn build_universe(web3: &Web3<WebSocket>, cfg: &Config) -> Result<Universe
         for j in (i + 1)..tokens.len() {
             let (a, b) = (tokens[i].1, tokens[j].1);
             for factory in &cfg.factories {
-                match dex::resolve_pool(web3, factory, a, b).await {
-                    Ok(Some(pool)) => {
-                        info!(
-                            "{}/{} on {}: pool {:?} (fee {} bps)",
-                            tokens[i].0, tokens[j].0, pool.dex, pool.address, pool.fee_bps
-                        );
-                        pools.push(pool);
+                match dex::resolve_pools(web3, factory, a, b).await {
+                    Ok(found) => {
+                        for pool in found {
+                            info!(
+                                "{}/{} on {}: pool {:?} (fee {} bps)",
+                                tokens[i].0, tokens[j].0, pool.dex, pool.address, pool.fee_bps
+                            );
+                            pools.push(pool);
+                        }
                     }
-                    Ok(None) => {}
                     Err(e) => warn!(
                         "failed to resolve {}/{} on {}: {:?}",
                         tokens[i].0, tokens[j].0, factory.name, e
@@ -329,9 +330,10 @@ async fn scan(
             let mut path: Vec<H160> = cycle.legs.iter().map(|l| l.token_in).collect();
             path.push(cfg.weth);
             let fees: Vec<u32> = cycle.legs.iter().map(|l| universe.pools[l.pool].fee_bps).collect();
+            let kinds: Vec<u8> = cycle.legs.iter().map(|l| universe.pools[l.pool].kind as u8).collect();
             // On-chain floor: if reserves move before inclusion and profit
             // would drop below gas cost, the contract reverts instead.
-            match exec.send(&pairs, &path, &fees, opp.amount_in, gas_cost, gas_price, gas_units * 2).await {
+            match exec.send(&pairs, &path, &fees, &kinds, opp.amount_in, gas_cost, gas_price, gas_units * 2).await {
                 Ok(hash) => {
                     info!("submitted arbitrage txn {:?}; pausing one block for nonce settlement", hash);
                     tokio::time::sleep(Duration::from_secs(cfg.block_time_secs + 1)).await;

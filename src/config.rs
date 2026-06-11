@@ -51,6 +51,7 @@ const MAINNET: ChainPreset = ChainPreset {
     factories: &[
         (FactoryKind::UniV2, "uniswap", "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f", Some("UNI_V2_FACTORY")),
         (FactoryKind::UniV2, "sushiswap", "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac", Some("SUSHI_FACTORY")),
+        (FactoryKind::UniV3, "uniswap-v3", "0x1F98431c8aD98523631AE4a59f267346ea31F984", Some("UNI_V3_FACTORY")),
     ],
     weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
     quote_tokens: &[
@@ -65,6 +66,9 @@ const MAINNET: ChainPreset = ChainPreset {
         "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD",
         // SushiSwap Router
         "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F",
+        // Uniswap V3 SwapRouter and SwapRouter02
+        "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+        "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
     ],
 };
 
@@ -78,6 +82,7 @@ const BASE: ChainPreset = ChainPreset {
         (FactoryKind::UniV2, "sushiswap", "0x71524B4f93c58fcbF659783284E38825f0622859", Some("SUSHI_FACTORY")),
         // Volatile (x*y=k) pools only; per-pool fee read from the factory.
         (FactoryKind::Solidly, "aerodrome", "0x420DD381b31aEf6683db6B902084cB0FFECe40Da", Some("AERODROME_FACTORY")),
+        (FactoryKind::UniV3, "uniswap-v3", "0x33128a8fC17869897dcE68Ed026d694621f6FDfD", Some("UNI_V3_FACTORY")),
     ],
     weth: "0x4200000000000000000000000000000000000006",
     quote_tokens: &[
@@ -92,6 +97,8 @@ const BASE: ChainPreset = ChainPreset {
         // Uniswap Universal Router (v1.2 and v2.0 deployments)
         "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD",
         "0x6fF5693b99212Da76ad316178A184AB56D299b43",
+        // Uniswap V3 SwapRouter02
+        "0x2626664c2603336E57B271c5C0b26F421741e481",
     ],
 };
 

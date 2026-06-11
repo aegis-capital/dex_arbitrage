@@ -109,6 +109,22 @@ pub fn format_eth(wei: U256) -> String {
     format!("{:.6}", u256_to_f64(wei) / 1e18)
 }
 
+/// Virtual reserves of a Uniswap V3 pool at its current price: within one
+/// tick range the pool is exactly a constant-product pool over
+/// (token0 = L*2^96/sqrtP, token1 = L*sqrtP/2^96). Computed without overflow
+/// for the full uint160 sqrtPriceX96 / uint128 liquidity domain by splitting
+/// sqrtP at the 2^96 boundary.
+pub fn v3_virtual_reserves(sqrt_price_x96: U256, liquidity: U256) -> (U256, U256) {
+    if sqrt_price_x96.is_zero() || liquidity.is_zero() {
+        return (U256::zero(), U256::zero());
+    }
+    let reserve0 = (liquidity << 96) / sqrt_price_x96;
+    let hi = sqrt_price_x96 >> 96;
+    let lo = sqrt_price_x96 & ((U256::one() << 96) - 1);
+    let reserve1 = liquidity * hi + ((liquidity * lo) >> 96);
+    (reserve0, reserve1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,6 +232,36 @@ mod tests {
             let out = round_trip(x, &legs);
             assert!(out - x <= opp.profit);
         }
+    }
+
+    #[test]
+    fn v3_virtual_reserves_at_unit_price() {
+        // sqrtP = 2^96 means price 1: both virtual reserves equal L.
+        let l = U256::from_dec_str("1000000000000000000").unwrap();
+        let (r0, r1) = v3_virtual_reserves(U256::one() << 96, l);
+        assert_eq!(r0, l);
+        assert_eq!(r1, l);
+    }
+
+    #[test]
+    fn v3_virtual_reserves_at_price_four() {
+        // sqrtP = 2*2^96 means token1/token0 price 4: r0 = L/2, r1 = 2L.
+        let l = U256::from(1_000_000u64);
+        let (r0, r1) = v3_virtual_reserves(U256::from(2u64) << 96, l);
+        assert_eq!(r0, U256::from(500_000u64));
+        assert_eq!(r1, U256::from(2_000_000u64));
+    }
+
+    #[test]
+    fn v3_virtual_reserves_no_overflow_at_extremes() {
+        // MAX_SQRT_RATIO (uint160 scale) with max uint128 liquidity.
+        let max_sqrt =
+            U256::from_dec_str("1461446703485210103287273052203988822378723970342").unwrap();
+        let max_liq = U256::from(u128::MAX);
+        let (r0, r1) = v3_virtual_reserves(max_sqrt, max_liq);
+        assert!(r1 > r0);
+        let (z0, z1) = v3_virtual_reserves(U256::zero(), max_liq);
+        assert!(z0.is_zero() && z1.is_zero());
     }
 
     #[test]
